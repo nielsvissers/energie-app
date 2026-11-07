@@ -1,10 +1,12 @@
-// src/lib/prisma.ts
 import { PrismaClient } from '.prisma/client';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 
-const connectionString = process.env.DATABASE_URL || 'mariadb://energydb:baU4M(K6lfd9TzaV@192.168.1.252:3306/energie_db';
+const connectionString = process.env.DATABASE_URL;
 
-// Koppel aan de Prisma 7 MariaDB Adapter
+if (!connectionString) {
+  throw new Error('DATABASE_URL is missing. Set it in your local environment before starting the app.');
+}
+
 const adapter = new PrismaMariaDb(connectionString);
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };

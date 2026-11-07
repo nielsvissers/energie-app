@@ -8,6 +8,7 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL="mysql://energydb:baU4M(K6lfd9TzaV@192.168.1.252:3306/energie_db"
-      - NEXT_PUBLIC_HA_URL="http://192.168.100.3:8123"
+      NEXT_PUBLIC_HA_URL: ${NEXT_PUBLIC_HA_URL:-http://homeassistant.local:8123}
