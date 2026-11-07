@@ -1,14 +1,15 @@
-FROM node:20-alpine AS build
+FROM node:lts-trixie AS build
 WORKDIR /app
 
 COPY app-source/package*.json ./
 RUN npm install
 
 COPY app-source/ ./
+ENV DATABASE_URL="mysql://user:pass@localhost:3306/dummy"
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:20-alpine
+FROM node:lts-trixie
 WORKDIR /app
 
 ENV NODE_ENV=production

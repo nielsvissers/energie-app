@@ -11,14 +11,18 @@ export async function syncHomeAssistantDagMetingen(targetDatumStr?: string) {
     return { success: false, error: 'Home Assistant variabelen ontbreken in .env' };
   }
 
+  function toDbDateOnly(value: Date) {
+    return new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate(), 12));
+  }
+
+
   // Bepaal de datum: meegegeven datum óf gisteren
   const d = targetDatumStr ? new Date(targetDatumStr) : new Date();
   if (!targetDatumStr) d.setDate(d.getDate() - 1);
 
   const startIso = new Date(d.setHours(0, 0, 0, 0)).toISOString();
-  const endIso = new Date(d.setHours(23, 59, 59, 999)).toISOString();
-  const datumSchoon = new Date(startIso);
 
+  const datumSchoon = toDbDateOnly(d);
   try {
     // 1. Haal alleen metingTypes op die een Home Assistant Entity ID gekoppeld hebben
     const GekoppeldeTypes = await prisma.metingType.findMany({
@@ -38,7 +42,7 @@ export async function syncHomeAssistantDagMetingen(targetDatumStr?: string) {
     // 2. Loop dynamisch door alle gekoppelde types uit de DB
     for (const type of GekoppeldeTypes) {
       const entityId = type.haEntityId!;
-      const url = `${HA_URL}/api/history/period/${startIso}?filter_entity_id=${entityId}&end_time=${endIso}&significant_changes_only=false`;
+      const url = `${HA_URL}/api/history/period/${startIso}?filter_entity_id=${entityId}&significant_changes_only=false`;
       console.log(url);
       const response = await fetch(
         url,
@@ -57,7 +61,7 @@ export async function syncHomeAssistantDagMetingen(targetDatumStr?: string) {
 
       // Bereken dagtotaal (laatste stand - eerste stand van de dag)
       if (data && data[0] && data[0].length > 1) {
-        const firstState = parseFloat(data[0][0].state);
+        const firstState = parseFloat(data[0][1].state);
         const lastState = parseFloat(data[0][data[0].length - 1].state);
 
         if (!isNaN(firstState) && !isNaN(lastState)) {
