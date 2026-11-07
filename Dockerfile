@@ -21,8 +21,6 @@ ENV DATABASE_URL="mysql://user:pass@localhost:3306/dummy"
 
 RUN npx prisma generate
 RUN npm run build
-RUN npx prisma generate
-RUN npm run build
 
 FROM base AS runner
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
