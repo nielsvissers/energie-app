@@ -62,9 +62,6 @@ export default function Sidebar() {
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             Online
           </span>
-          <button onClick={() => syncHomeAssistantDagMetingen()} className="text-slate-500 hover:text-slate-300 text-xs">
-            🔄 test
-          </button>
         </div>
         <div className="text-[11px] text-slate-500">Proxmox / Portainer LXC</div>
       </div>

@@ -1,0 +1,44 @@
+name: Energie App
+version: "1.0.0"
+slug: energie-app
+description: "Next.js energie monitoring app voor Home Assistant"
+url: "https://github.com/your-username/energie-app/tree/main/energie-app"
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+ingress: true
+ingress_port: 3000
+webui: "http://[HOST]:[PORT:3000]"
+panel_icon: mdi:chart-bell-curve
+panel_title: Energie App
+ports:
+  3000/tcp: 3000
+ports_description:
+  3000/tcp: "Web interface"
+host_network: false
+privileged: []
+devices: []
+map: []
+options:
+  HOME_ASSISTANT_URL: "http://homeassistant.local:8123"
+  HOME_ASSISTANT_TOKEN: ""
+  CRON_SECRET: ""
+  DB_HOST: "192.168.1.252"
+  DB_PORT: "3306"
+  DB_USER: "energydb"
+  DB_PASSWORD: ""
+  DB_NAME: "energie_db"
+  DATABASE_URL: ""
+schema:
+  HOME_ASSISTANT_URL: str
+  HOME_ASSISTANT_TOKEN: password
+  CRON_SECRET: password
+  DB_HOST: str
+  DB_PORT: str
+  DB_USER: str
+  DB_PASSWORD: password
+  DB_NAME: str
+  DATABASE_URL: str

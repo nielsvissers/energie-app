@@ -1,0 +1,5 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+echo "Energie App service is ready."
+exec /bin/bash -lc "echo 'Application start is handled by the container CMD'"
