@@ -1,0 +1,307 @@
+datasource db {
+  provider = "mysql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+// ==========================================
+// ENUMS (Types uit de MariaDB DDL)
+// ==========================================
+
+enum KostencategorieType {
+  NETTARIEF
+  HEFFING
+  ENERGIE
+  BTW
+  KORTING
+  DIVERS
+}
+
+enum Eenheid {
+  KWH
+  KW_JAAR
+  VAST_JAAR
+  MAAND
+  PERCENTAGE
+  VAST_BEDRAG
+  KVA_JAAR
+}
+
+enum ContractType {
+  VAST
+  VARIABEL
+  DYNAMISCH
+}
+
+enum FactuurType {
+  VOORSCHOT
+  AFREKENING
+  SLOTFACTUUR
+}
+
+enum HerkomstMeting {
+  HISTORISCH_IMPORT
+  HOME_ASSISTANT
+  MANUEEL
+}
+
+enum InvesteringsType {
+  ZONNEPANELEN
+  BATTERIJ
+  OMVORMER
+  LAADPUNT
+  DIVERS
+}
+
+// ==========================================
+// 1. STAMDATA & INSTELLINGEN
+// ==========================================
+
+model Instelling {
+  sleutel      String  @id @db.VarChar(64)
+  waarde       String  @db.Text
+  beschrijving String? @db.VarChar(255)
+
+  @@map("instellingen")
+}
+
+model TariefType {
+  id             Int                 @id @default(autoincrement())
+  sleutel         String           @db.VarChar(64)
+  waarde          String           @db.Text
+  beschrijving    String?          @db.VarChar(255)
+  contractTariefs ContractTarief[]
+  
+  factuurTariefs FactuurLijn[]
+
+  @@map("tarief_types")
+}
+
+model Kostencategorie {
+  id             Int                 @id @default(autoincrement())
+  naam           String              @unique(map: "uq_kostencategorie_naam") @db.VarChar(100)
+  type           KostencategorieType
+  eenheid        Eenheid
+  herrekenPerDag Boolean             @default(false) @map("herreken_per_dag") // Pro-rata herberekening inschakelen
+
+  tarieven      KostencategorieTarief[]
+  factuurLijnen FactuurLijn[]
+
+  @@map("kostencategorieen")
+}
+
+model KostencategorieTarief {
+  id                Int             @id @default(autoincrement())
+  kostencategorieId Int             @map("kostencategorie_id")
+  kostencategorie   Kostencategorie @relation(fields: [kostencategorieId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  regioNetbeheerder String?   @map("regio_netbeheerder") @db.VarChar(100)
+  prijsExclBtw      Float   @map("prijs_excl_btw") @db.Double
+  btwPercentage     Float   @default(6.00) @map("btw_percentage") @db.Double
+  geldigVan         DateTime  @map("geldig_van") @db.Date
+  geldigTot         DateTime? @map("geldig_tot") @db.Date
+  minDrempelWaarde  Float?  @map("min_drempel_waarde") @db.Double
+  herrekenPerDag    Boolean   @default(false) @map("herreken_per_dag")
+
+  @@map("kostencategorie_tarieven")
+}
+
+// ==========================================
+// 2. CONTRACTEN & FACTURATIE
+// ==========================================
+
+model EnergieContract {
+  id           Int          @id @default(autoincrement())
+  leverancier  String       @db.VarChar(100)
+  contractNaam String       @map("contract_naam") @db.VarChar(100)
+  type         ContractType
+  startDatum   DateTime     @map("start_datum") @db.Date
+  eindDatum    DateTime?    @map("eind_datum") @db.Date
+
+  tarieven ContractTarief[]
+  facturen Factuur[]
+
+  @@map("energie_contracten")
+}
+
+model ContractTarief {
+  id         Int             @id @default(autoincrement())
+  contractId Int             @map("contract_id")
+  contract   EnergieContract @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  prijsPerEenheidInclBtw Float    @map("prijs_per_eenheid_incl_btw") @db.Double // Extreem precies voor centen/euro's
+  prijsPerEenheidExclBtw  Float    @map("prijs_per_eenheid_excl_btw") @db.Double // Extreem precies voor centen/euro's
+  btwPercentage          Float    @default(6.00) @map("btw_percentage") @db.Double
+  eenheid                Eenheid    @default(KWH)
+  herrekenPerDag         Boolean    @default(false) @map("herreken_per_dag") // Vlag voor /365 herberekening
+  geldigVan              DateTime   @map("geldig_van") @db.Date
+  geldigTot              DateTime?  @map("geldig_tot") @db.Date
+  tariefTypeId           Int
+  type                   TariefType @relation(fields: [tariefTypeId], references: [id])
+
+  @@map("contract_tarieven")
+}
+
+model DynamischePrijs {
+  timestamp           DateTime @id @db.DateTime
+  afnamePrijsPerKwh   Float  @map("afname_prijs_per_kwh") @db.Double
+  injectiePrijsPerKwh Float  @map("injectie_prijs_per_kwh") @db.Double
+
+  @@map("dynamische_prijzen")
+}
+
+model Factuur {
+  id         Int              @id @default(autoincrement())
+  contractId Int?             @map("contract_id")
+  contract   EnergieContract? @relation(fields: [contractId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  factuurnummer String?     @db.VarChar(64)
+  factuurDatum  DateTime    @map("factuur_datum") @db.Date
+  startDatum    DateTime    @map("start_datum") @db.Date
+  eindDatum     DateTime    @map("eind_datum") @db.Date
+  factuurType   FactuurType @map("factuur_type")
+
+  // Eenmalig ingevoerde verbruikswaarden op factuurniveau
+  verbruikDag       Float @default(0.00) @map("verbruik_dag") @db.Double
+  verbruikNacht     Float @default(0.00) @map("verbruik_nacht") @db.Double
+  verbruikExclNacht Float @default(0.00) @map("verbruik_excl_nacht") @db.Double
+  injectieDag       Float @default(0.00) @map("injectie_dag") @db.Double
+  injectieNacht     Float @default(0.00) @map("injectie_nacht") @db.Double
+
+  totaalBedragExclBtw Float @map("totaal_bedrag_excl_btw") @db.Double
+  totaalBtwBedrag     Float @map("totaal_btw_bedrag") @db.Double
+  totaalBedragInclBtw Float @map("totaal_bedrag_incl_btw") @db.Double
+
+  piekvermogen Float @map("piekvermogen") @db.Double @default(0)
+
+  lijnen FactuurLijn[]
+
+  @@map("facturen")
+}
+
+model FactuurLijn {
+  id                Int             @id @default(autoincrement())
+  factuurId         Int             @map("factuur_id")
+  factuur           Factuur         @relation(fields: [factuurId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  kostencategorieId Int             @map("kostencategorie_id")
+  kostencategorie   Kostencategorie @relation(fields: [kostencategorieId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  omschrijving   String? @db.VarChar(255)
+  hoeveelheid    Float @db.Double
+  eenheidsprijs  Float @db.Double
+  herrekenPerDag Boolean @default(false) @map("herreken_per_dag") // Onthoudt of pro-rata per dag werd toegepast
+  
+  tariefTypeId           Int
+  type                   TariefType @relation(fields: [tariefTypeId], references: [id])
+
+  bedragExclBtw Float @map("bedrag_excl_btw") @db.Double
+  btwPercentage Float @default(6.00) @map("btw_percentage") @db.Double
+  bedragInclBtw Float @map("bedrag_incl_btw") @db.Double
+
+  @@map("factuur_lijnen")
+}
+
+// ==========================================
+// 3. MEETDATA (TIME-SERIES)
+// ==========================================
+
+model MetingType {
+  id        Int         @id @default(autoincrement())
+  code      String      @unique // b.v. "AFNAME_PIEK", "INJECTIE_DAL", "CAPACITEIT_PIEK"
+  naam      String      // b.v. "Verbruik Piek", "Injectie Dal"
+  eenheid   String      @default("kWh") // "kWh", "kW", "%"
+  metingen  DagMeting[]
+  haEntityId  String?     // bv. 'sensor.grid_consumption_peak' (optioneel)
+
+  @@map("meting_types")
+}
+
+model DagMeting {
+  id           Int            @id @default(autoincrement())
+  datum        DateTime       @db.Date
+  metingTypeId Int            @map("meting_type_id")
+  waarde       Float          @db.Double
+  herkomst     HerkomstMeting @default(MANUEEL)
+
+  metingType   MetingType     @relation(fields: [metingTypeId], references: [id], onDelete: Cascade)
+
+  // Uniek per datum, type en herkomst om dubbele invoer te voorkomen
+  @@unique([datum, metingTypeId, herkomst], map: "unique_dag_meting_type")
+  @@index([datum], map: "idx_dag_datum")
+  @@map("dag_metingen")
+}
+
+model MinuutMeting {
+  timestamp         DateTime @id @db.DateTime
+  afnameKw          Float  @default(0.000) @map("afname_kw") @db.Double
+  injectieKw        Float  @default(0.000) @map("injectie_kw") @db.Double
+  zonneProductieKw  Float  @default(0.000) @map("zonne_productie_kw") @db.Double
+  verbruikKwh       Float  @default(0.000000) @map("verbruik_kwh") @db.Double
+  kwartierTimestamp DateTime @map("kwartier_timestamp") @db.DateTime
+
+  @@index([kwartierTimestamp], map: "idx_mm_kwartier")
+  @@map("minuut_metingen")
+}
+
+model Maandpiek {
+  jaarMaand                 String  @id @map("jaar_maand") @db.VarChar(7) // YYYY-MM
+  hoogsteKwartierpiekKw     Float @map("hoogste_kwartierpiek_kw") @db.Double
+  isGecorrigeerdNaarMinimum Boolean @default(false) @map("is_gecorrigeerd_naar_minimum")
+
+  @@map("maandpieken")
+}
+
+// ==========================================
+// 4. SIMULATIES & INVESTERINGEN
+// ==========================================
+
+model Investering {
+  id                 Int              @id @default(autoincrement())
+  naam               String           @db.VarChar(100)
+  type               InvesteringsType
+  aankoopDatum       DateTime         @map("aankoop_datum") @db.Date
+  brutoKostprijs     Float          @map("bruto_kostprijs") @db.Double
+  subsidiesOntvangen Float          @default(0.00) @map("subsidies_ontvangen") @db.Double
+
+  // Opmerking: virtuele/generated kolommen zoals `netto_investering` worden via Prisma 
+  // berekend op applicatieniveau of gelezen als gewone Double.
+  verwachteLevensduurJaren Int @default(15) @map("verwachte_levensduur_jaren")
+
+  @@map("investeringen")
+}
+
+model SimulatieProfiel {
+  id                    Int     @id @default(autoincrement())
+  naam                  String  @db.VarChar(100)
+  capaciteitKwh         Float @map("capaciteit_kwh") @db.Double
+  omvormerVermogenKw    Float @map("omvormer_vermogen_kw") @db.Double
+  laadEfficientiePct    Float @default(95.00) @map("laad_efficientie_pct") @db.Double
+  ontlaadEfficientiePct Float @default(95.00) @map("ontlaad_efficientie_pct") @db.Double
+  minSocPct             Float @default(10.00) @map("min_soc_pct") @db.Double
+  maxSocPct             Float @default(90.00) @map("max_soc_pct") @db.Double
+
+  resultaten SimulatieResultaat[]
+
+  @@map("simulatie_profielen")
+}
+
+model SimulatieResultaat {
+  id                 Int              @id @default(autoincrement())
+  simulatieProfielId Int              @map("simulatie_profiel_id")
+  simulatieProfiel   SimulatieProfiel @relation(fields: [simulatieProfielId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  startDatum                  DateTime @map("start_datum") @db.Date
+  eindDatum                   DateTime @map("eind_datum") @db.Date
+  nieuweAfnameKwh             Float  @map("nieuwe_afname_kwh") @db.Double
+  nieuweInjectieKwh           Float  @map("nieuwe_injectie_kwh") @db.Double
+  zelfconsumptiePct           Float  @map("zelfconsumptie_pct") @db.Double
+  autarkiePct                 Float  @map("autarkie_pct") @db.Double
+  nieuweGemiddeldeMaandpiekKw Float  @map("nieuwe_gemiddelde_maandpiek_kw") @db.Double
+  geschatteBesparingEur       Float  @map("geschatte_besparing_eur") @db.Double
+  berekendOp                  DateTime @default(now()) @map("berekend_op") @db.DateTime
+
+  @@map("simulatie_resultaten")
+}

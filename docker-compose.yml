@@ -1,0 +1,13 @@
+# docker-compose.yml (voor Portainer)
+version: '3.8'
+
+services:
+  energie-app:
+    build: .
+    container_name: energie_react_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL="mysql://energydb:baU4M(K6lfd9TzaV@192.168.1.252:3306/energie_db"
+      - NEXT_PUBLIC_HA_URL="http://192.168.100.3:8123"
