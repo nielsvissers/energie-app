@@ -1,5 +1,5 @@
 name: Energie App
-version: "0.1.0"
+version: "0.1.1"
 slug: energie-app
 description: "Next.js energie monitoring app voor Home Assistant"
 url: "https://github.com/nielsvissers/energie-app/tree/main/energie-app"
