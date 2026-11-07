@@ -1,14 +1,28 @@
-# docker-compose.yml (voor Portainer)
 version: '3.8'
 
 services:
   energie-app:
-    build: .
-    container_name: energie_react_app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: energie-app:local
+    container_name: energie-app
     restart: unless-stopped
-    ports:
-      - "3000:3000"
     env_file:
       - .env
     environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3000}
+      HOSTNAME: 0.0.0.0
+      HOME_ASSISTANT_URL: ${HOME_ASSISTANT_URL:-http://homeassistant.local:8123}
+      HOME_ASSISTANT_TOKEN: ${HOME_ASSISTANT_TOKEN}
+      CRON_SECRET: ${CRON_SECRET}
+      DB_HOST: ${DB_HOST:-192.168.1.252}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-energie_db}
+      DATABASE_URL: ${DATABASE_URL}
       NEXT_PUBLIC_HA_URL: ${NEXT_PUBLIC_HA_URL:-http://homeassistant.local:8123}
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
