@@ -2,6 +2,12 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import {
+  lokaleTijdNaarUtc,
+  parseDalurenInstellingen,
+  splitsMeterHistorie,
+  vorigeLokaleDatum,
+} from '@/lib/daluren';
 
 const HA_URL = process.env.HOME_ASSISTANT_URL;
 const HA_TOKEN = process.env.HOME_ASSISTANT_TOKEN;
@@ -11,62 +17,109 @@ export async function syncHomeAssistantDagMetingen(targetDatumStr?: string) {
     return { success: false, error: 'Home Assistant variabelen ontbreken in .env' };
   }
 
-  function toDbDateOnly(value: Date) {
-    return new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate(), 12));
-  }
-
-
-  // Bepaal de datum: meegegeven datum óf gisteren
-  const d = targetDatumStr ? new Date(targetDatumStr) : new Date();
-  if (!targetDatumStr) d.setDate(d.getDate() - 1);
-
-  const startIso = new Date(d.setHours(0, 0, 0, 0)).toISOString();
-
-  const datumSchoon = toDbDateOnly(d);
   try {
-    // 1. Haal alleen metingTypes op die een Home Assistant Entity ID gekoppeld hebben
-    const GekoppeldeTypes = await prisma.metingType.findMany({
-      where: {
-        haEntityId: {
-          not: null,
-        },
-      },
-    });
+    const datumStr = targetDatumStr || vorigeLokaleDatum();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(datumStr)) {
+      return { success: false, error: 'Ongeldige datum opgegeven.' };
+    }
 
+    const volgendeDatum = new Date(`${datumStr}T00:00:00.000Z`);
+    volgendeDatum.setUTCDate(volgendeDatum.getUTCDate() + 1);
+    const start = lokaleTijdNaarUtc(datumStr, '00:00');
+    const einde = lokaleTijdNaarUtc(volgendeDatum.toISOString().slice(0, 10), '00:00');
+    const datumSchoon = new Date(`${datumStr}T12:00:00.000Z`);
+    const instelling = await prisma.instelling.findUnique({ where: { sleutel: 'daluren_schema' } });
+    const daluren = parseDalurenInstellingen(instelling?.waarde);
+
+    const alleTypes = await prisma.metingType.findMany();
+    const GekoppeldeTypes = alleTypes.filter((type) => type.haEntityId);
     if (GekoppeldeTypes.length === 0) {
       return { success: false, error: 'Geen Home Assistant sensoren gekoppeld in de database.' };
     }
 
+    const groepen = new Map<string, typeof GekoppeldeTypes>();
+    for (const type of GekoppeldeTypes) {
+      const basisCode = type.code.replace(/_(PIEK|DAL)$/i, '');
+      const groepSleutel = `${type.haEntityId}:${basisCode}`;
+      groepen.set(groepSleutel, [...(groepen.get(groepSleutel) ?? []), type]);
+    }
+
     const opslagActies = [];
 
-    // 2. Loop dynamisch door alle gekoppelde types uit de DB
-    for (const type of GekoppeldeTypes) {
-      const entityId = type.haEntityId!;
-      const url = `${HA_URL}/api/history/period/${startIso}?filter_entity_id=${entityId}&significant_changes_only=false`;
-      console.log(url);
-      const response = await fetch(
-        url,
-        {
-          headers: {
-            Authorization: `Bearer ${HA_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-        }
-      );
-
+    for (const groep of groepen.values()) {
+      const entityId = groep[0].haEntityId;
+      if (!entityId) continue;
+      const url = `${HA_URL}/api/history/period/${start.toISOString()}?filter_entity_id=${encodeURIComponent(entityId)}&end_time=${encodeURIComponent(einde.toISOString())}&significant_changes_only=false`;
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${HA_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      });
+      console.log(response);
       if (!response.ok) continue;
 
       const data = await response.json();
+      const historie = data?.[0];
+      if (!Array.isArray(historie)) continue;
 
-      // Bereken dagtotaal (laatste stand - eerste stand van de dag)
-      if (data && data[0] && data[0].length > 1) {
-        const firstState = parseFloat(data[0][1].state);
-        const lastState = parseFloat(data[0][data[0].length - 1].state);
+      const bronTypes = groep.filter((type) => type.haSingleSourcePeak || type.haSingleSourceOffPeak);
+      const dagelijkseReset = groep.some((type) => type.haDailyReset);
+      const gesplitst = splitsMeterHistorie(historie, start, einde, daluren, dagelijkseReset);
+      if (!gesplitst) continue;
 
-        if (!isNaN(firstState) && !isNaN(lastState)) {
-          const dagTotaal = Math.max(0, Math.round((lastState - firstState) * 1000) / 1000);
+      if (bronTypes.length > 0) {
+        const basisCode = bronTypes[0].code.replace(/_(PIEK|DAL)$/i, '');
+        const bewaarPiek = bronTypes.some((type) => type.haSingleSourcePeak);
+        const bewaarDal = bronTypes.some((type) => type.haSingleSourceOffPeak);
+        const piekType = bewaarPiek ? alleTypes.find((type) => type.code === `${basisCode}_PIEK`) : undefined;
+        const dalType = bewaarDal ? alleTypes.find((type) => type.code === `${basisCode}_DAL`) : undefined;
 
+        if (bewaarPiek && piekType) {
+          opslagActies.push(
+            prisma.dagMeting.upsert({
+              where: {
+                datum_metingTypeId_herkomst: {
+                  datum: datumSchoon,
+                  metingTypeId: piekType.id,
+                  herkomst: 'HOME_ASSISTANT',
+                },
+              },
+              update: { waarde: gesplitst.piek },
+              create: {
+                datum: datumSchoon,
+                metingTypeId: piekType.id,
+                waarde: gesplitst.piek,
+                herkomst: 'HOME_ASSISTANT',
+              },
+            })
+          );
+        }
+
+        if (bewaarDal && dalType) {
+          opslagActies.push(
+            prisma.dagMeting.upsert({
+              where: {
+                datum_metingTypeId_herkomst: {
+                  datum: datumSchoon,
+                  metingTypeId: dalType.id,
+                  herkomst: 'HOME_ASSISTANT',
+                },
+              },
+              update: { waarde: gesplitst.dal },
+              create: {
+                datum: datumSchoon,
+                metingTypeId: dalType.id,
+                waarde: gesplitst.dal,
+                herkomst: 'HOME_ASSISTANT',
+              },
+            })
+          );
+        }
+      } else {
+        const dagTotaal = Math.round((gesplitst.piek + gesplitst.dal) * 1000) / 1000;
+        for (const type of groep) {
           opslagActies.push(
             prisma.dagMeting.upsert({
               where: {
