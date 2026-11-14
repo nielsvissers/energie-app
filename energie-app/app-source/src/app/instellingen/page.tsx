@@ -1,11 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   getHomeAssistantSensoren,
   getMetingTypesMetSensoren,
   koppelHaEntityId,
   HASensor,
+  setDailyReset,
+  setSingleSourceOffPeak,
+  setSingleSourcePeak,
 } from '@/actions/instellingenActions';
 
 export default function InstellingenPage() {
@@ -54,6 +58,42 @@ export default function InstellingenPage() {
     }
     setSavingId(null);
   };
+  const handleDailyResetChange = async (metingTypeId: number, dailyReset: boolean) => {
+    setSavingId(metingTypeId);
+    const res = await setDailyReset(metingTypeId, dailyReset);
+    if (res.success) {
+      setTypes((prev) =>
+        prev.map((t) => (t.id === metingTypeId ? { ...t, haDailyReset: dailyReset } : t))
+      );
+    } else {
+      alert(`Fout bij opslaan: ${res.error}`);
+    }
+    setSavingId(null);
+  };
+  const handleSingleSourceOffPeakChange = async (metingTypeId: number, singleSourceOffPeak: boolean) => {
+    setSavingId(metingTypeId);
+    const res = await setSingleSourceOffPeak(metingTypeId, singleSourceOffPeak);
+    if (res.success) {
+      setTypes((prev) =>
+        prev.map((t) => (t.id === metingTypeId ? { ...t, haSingleSourceOffPeak: singleSourceOffPeak } : t))
+      );
+    } else {
+      alert(`Fout bij opslaan: ${res.error}`);
+    }
+    setSavingId(null);
+  };
+  const handleSingleSourcePeakChange = async (metingTypeId: number, singleSourcePeak: boolean) => {
+    setSavingId(metingTypeId);
+    const res = await setSingleSourcePeak(metingTypeId, singleSourcePeak);
+    if (res.success) {
+      setTypes((prev) =>
+        prev.map((t) => (t.id === metingTypeId ? { ...t, haSingleSourcePeak: singleSourcePeak } : t))
+      );
+    } else {
+      alert(`Fout bij opslaan: ${res.error}`);
+    }
+    setSavingId(null);
+  };
 
   // Filter de opties in het dropdownmenu op zoekterm indien gewenst
   const gefilterdeSensoren = haSensoren.filter(
@@ -64,7 +104,7 @@ export default function InstellingenPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-4 md:p-6 text-slate-100 space-y-6">
-      
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-xl">
         <div>
@@ -79,6 +119,14 @@ export default function InstellingenPage() {
           🔄 {loading ? 'Ophalen...' : 'Sensoren Herladen'}
         </button>
       </div>
+
+      <Link
+        href="/instellingen/daluren"
+        className="block bg-slate-900 border border-slate-800 p-4 rounded-lg hover:border-emerald-500/60 transition"
+      >
+        <div className="text-sm font-semibold text-slate-200">Daluren instellen</div>
+        <div className="mt-1 text-xs text-slate-400">Configureer de daluren en weekendregeling voor Home Assistant-metingen.</div>
+      </Link>
 
       {foutmelding && (
         <div className="bg-rose-950/80 border border-rose-800 text-rose-300 text-xs p-4 rounded-xl">
@@ -113,24 +161,60 @@ export default function InstellingenPage() {
                   <div className="text-[11px] font-mono text-emerald-400/80">{type.code} ({type.eenheid})</div>
                 </div>
 
-                <div className="sm:w-2/3 flex items-center gap-2">
-                  <select
-                    value={type.haEntityId || ''}
-                    disabled={savingId === type.id}
-                    onChange={(e) => handleKoppelingChange(type.id, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white outline-none focus:border-emerald-500 transition disabled:opacity-50"
-                  >
-                    <option value="">-- Geen sensor gekoppeld --</option>
-                    {gefilterdeSensoren.map((sensor) => (
-                      <option key={sensor.entity_id} value={sensor.entity_id}>
-                        {sensor.friendly_name} [{sensor.entity_id}] {sensor.unit_of_measurement ? `(${sensor.unit_of_measurement})` : ''}
-                      </option>
-                    ))}
-                  </select>
-
-                  {savingId === type.id && (
-                    <span className="text-xs text-emerald-400 font-mono animate-pulse">Opslaan...</span>
-                  )}
+                <div className="sm:w-2/3">
+                  <div>
+                    <select
+                      value={type.haEntityId || ''}
+                      disabled={savingId === type.id}
+                      onChange={(e) => handleKoppelingChange(type.id, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white outline-none focus:border-emerald-500 transition disabled:opacity-50"
+                    >
+                      <option value="">-- Geen sensor gekoppeld --</option>
+                      {gefilterdeSensoren.map((sensor) => (
+                        <option key={sensor.entity_id} value={sensor.entity_id}>
+                          {sensor.friendly_name} [{sensor.entity_id}] {sensor.unit_of_measurement ? `(${sensor.unit_of_measurement})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="flex shrink-0 items-center gap-2 text-xs text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={type.haDailyReset ?? false}
+                        onChange={(e) => { handleDailyResetChange(type.id, e.target.checked); }}
+                        className="accent-emerald-500"
+                      />
+                      Meting reset dagelijks (bijv. voor dagtotalen)
+                    </label>
+                  </div>
+                  <div>
+                    <label className="flex shrink-0 items-center gap-2 text-xs text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={type.haSingleSourcePeak ?? false}
+                        onChange={(e) => { handleSingleSourcePeakChange(type.id, e.target.checked); }}
+                        className="accent-emerald-500"
+                      />
+                      Piekwaarde komt van dezelfde bron (bijv. voor slimme meters)
+                    </label>
+                  </div>
+                  <div>
+                    <label className="flex shrink-0 items-center gap-2 text-xs text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={type.haSingleSourceOffPeak ?? false}
+                        onChange={(e) => { handleSingleSourceOffPeakChange(type.id, e.target.checked); }}
+                        className="accent-emerald-500"
+                      />
+                      Dalwaarde komt van dezelfde bron (bijv. voor slimme meters)
+                    </label>
+                  </div>
+                  <div>
+                    {savingId === type.id &&
+                      <span className="text-xs text-emerald-400 font-mono animate-pulse">Opslaan...</span>
+                    }
+                  </div>
                 </div>
               </div>
             ))}

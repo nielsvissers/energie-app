@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { DalurenInstellingen, parseDalurenInstellingen } from '@/lib/daluren';
 
 const HA_URL = process.env.HOME_ASSISTANT_URL;
 const HA_TOKEN = process.env.HOME_ASSISTANT_TOKEN;
@@ -44,8 +45,8 @@ export async function getHomeAssistantSensoren(): Promise<{ success: boolean; se
         const attrs = s.attributes || {};
 
         const isEnergyClass = attrs.device_class === 'energy';
-        const isKwhUnit = attrs.unit_of_measurement?.toLowerCase() === 'kwh' || 
-                          attrs.unit_of_measurement?.toLowerCase() === 'wh';
+        const isKwhUnit = attrs.unit_of_measurement?.toLowerCase() === 'kwh' ||
+          attrs.unit_of_measurement?.toLowerCase() === 'wh';
 
         // Behoud de sensor als deze aan het energie-criteria voldoet
         return isSensor && (isEnergyClass || isKwhUnit);
@@ -80,6 +81,84 @@ export async function koppelHaEntityId(metingTypeId: number, haEntityId: string 
 
     revalidatePath('/instellingen');
     revalidatePath('/verbruik');
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+export async function setDailyReset(metingTypeId: number, dailyReset: boolean) {
+  try {
+    await prisma.metingType.update({
+      where: { id: metingTypeId },
+      data: { haDailyReset: dailyReset },
+    });
+
+    revalidatePath('/instellingen');
+    revalidatePath('/verbruik');
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+export async function setSingleSourceOffPeak(metingTypeId: number, singleSourceOffPeak: boolean) {
+  try {
+    await prisma.metingType.update({
+      where: { id: metingTypeId },
+      data: { haSingleSourceOffPeak: singleSourceOffPeak },
+    });
+
+    revalidatePath('/instellingen');
+    revalidatePath('/verbruik');
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+export async function setSingleSourcePeak(metingTypeId: number, singleSourcePeak: boolean) {
+  try {
+    await prisma.metingType.update({
+      where: { id: metingTypeId },
+      data: { haSingleSourcePeak: singleSourcePeak },
+    });
+
+    revalidatePath('/instellingen');
+    revalidatePath('/verbruik');
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+const DALUREN_SLEUTEL = 'daluren_schema';
+
+export async function getDalurenInstellingen(): Promise<DalurenInstellingen> {
+  const instelling = await prisma.instelling.findUnique({ where: { sleutel: DALUREN_SLEUTEL } });
+  return parseDalurenInstellingen(instelling?.waarde);
+}
+
+export async function setDalurenInstellingen(instellingen: DalurenInstellingen) {
+  const tijdPatroon = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (
+    !tijdPatroon.test(instellingen.start) ||
+    !tijdPatroon.test(instellingen.einde) ||
+    instellingen.start === instellingen.einde ||
+    typeof instellingen.weekends !== 'boolean'
+  ) {
+    return { success: false, error: 'Geef geldige en verschillende begin- en eindtijden op.' };
+  }
+
+  try {
+    await prisma.instelling.upsert({
+      where: { sleutel: DALUREN_SLEUTEL },
+      update: { waarde: JSON.stringify(instellingen) },
+      create: {
+        sleutel: DALUREN_SLEUTEL,
+        waarde: JSON.stringify(instellingen),
+        beschrijving: 'Daluren voor het splitsen van Home Assistant-metingen',
+      },
+    });
+    revalidatePath('/instellingen');
+    revalidatePath('/instellingen/daluren');
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };

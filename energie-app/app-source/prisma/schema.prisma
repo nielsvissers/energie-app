@@ -215,6 +215,9 @@ model MetingType {
   eenheid   String      @default("kWh") // "kWh", "kW", "%"
   metingen  DagMeting[]
   haEntityId  String?     // bv. 'sensor.grid_consumption_peak' (optioneel)
+  haDailyReset Boolean @default(false) //onafhankelijk van het type in HA enkel de hoogste waarde selecteren bij import vanuit HA
+  haSingleSourcePeak Boolean @default(false) //nodig om verschil te maken tussen piek of dal verbruik bij een enkele meter
+  haSingleSourceOffPeak Boolean @default(false) //nodig om verschil te maken tussen piek of dal verbruik bij een enkele meter
 
   @@map("meting_types")
 }
@@ -252,6 +255,46 @@ model Maandpiek {
   isGecorrigeerdNaarMinimum Boolean @default(false) @map("is_gecorrigeerd_naar_minimum")
 
   @@map("maandpieken")
+}
+
+model StatisticSource {
+  id         String              @id @db.VarChar(64)
+  name       String              @db.VarChar(191)
+  statistics StatisticMetadata[]
+
+  @@map("statistic_sources")
+}
+
+model StatisticMetadata {
+  statisticId       String           @id @map("statistic_id") @db.VarChar(191)
+  sourceId          String           @map("source_id") @db.VarChar(64)
+  source            StatisticSource  @relation(fields: [sourceId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  name              String?          @db.VarChar(191)
+  unitOfMeasurement String?          @map("unit_of_measurement") @db.VarChar(64)
+  hasMean           Boolean          @default(false) @map("has_mean")
+  hasSum            Boolean          @default(false) @map("has_sum")
+  lastSyncedAt      DateTime?        @map("last_synced_at") @db.DateTime(3)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.DateTime(3)
+  values            StatisticValue[]
+
+  @@index([sourceId], map: "idx_statistic_metadata_source")
+  @@map("statistic_metadata")
+}
+
+model StatisticValue {
+  statisticId String            @map("statistic_id") @db.VarChar(191)
+  timestamp   DateTime          @db.DateTime(3)
+  state       Float?            @db.Double
+  sum         Float?            @db.Double
+  source      String            @db.VarChar(64)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.DateTime(3)
+  statistic   StatisticMetadata @relation(fields: [statisticId], references: [statisticId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([statisticId, timestamp], map: "unique_statistic_timestamp")
+  @@index([timestamp], map: "idx_statistic_value_timestamp")
+  @@map("statistic_values")
 }
 
 // ==========================================

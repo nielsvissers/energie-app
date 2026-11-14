@@ -1,1 +1,4 @@
-{}
+{
+  "/api/homeassistant/statistics-sync/route": "app/api/homeassistant/statistics-sync/route.js",
+  "/api/homeassistant/statistics/route": "app/api/homeassistant/statistics/route.js"
+}

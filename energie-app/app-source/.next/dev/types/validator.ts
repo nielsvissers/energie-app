@@ -101,6 +101,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../src/app/instellingen/daluren/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/instellingen/daluren">> = Specific
+  const handler = {} as typeof import("../../../src/app/instellingen/daluren/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../src/app/instellingen/page.tsx
 {
   type __IsExpected<Specific extends AppPageConfig<"/instellingen">> = Specific
@@ -132,6 +141,24 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/ha-sync">> = Specific
   const handler = {} as typeof import("../../../src/app/api/ha-sync/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../src/app/api/homeassistant/statistics-sync/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/homeassistant/statistics-sync">> = Specific
+  const handler = {} as typeof import("../../../src/app/api/homeassistant/statistics-sync/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../src/app/api/homeassistant/statistics/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/homeassistant/statistics">> = Specific
+  const handler = {} as typeof import("../../../src/app/api/homeassistant/statistics/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check

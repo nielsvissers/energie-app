@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test:ha-statistics": "node scripts/test-ha-statistics.mjs",
     "prepare": "next-ws patch",
     "lint": "eslint"
   },
