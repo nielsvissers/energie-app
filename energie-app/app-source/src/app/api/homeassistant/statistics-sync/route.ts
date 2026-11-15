@@ -14,6 +14,7 @@ interface SyncRequestBody {
   date?: string;
   startTime?: string;
   endTime?: string;
+  minimumSearchDate?: string;
   chunkDays?: number;
   statisticBatchSize?: number;
 }
@@ -77,6 +78,16 @@ export async function POST(request: Request) {
     const endTime = parseDate(body.endTime);
     if (!endTime) return NextResponse.json({ error: 'endTime must be a valid ISO date.' }, { status: 400 });
     options.endTime = endTime;
+  }
+  if (body.minimumSearchDate !== undefined) {
+    if (typeof body.minimumSearchDate !== 'string') {
+      return NextResponse.json({ error: 'minimumSearchDate must be a valid ISO date.' }, { status: 400 });
+    }
+    const minimumSearchDate = parseDate(body.minimumSearchDate);
+    if (!minimumSearchDate) {
+      return NextResponse.json({ error: 'minimumSearchDate must be a valid ISO date.' }, { status: 400 });
+    }
+    options.minimumSearchDate = minimumSearchDate;
   }
   if (body.chunkDays !== undefined) options.chunkDays = body.chunkDays;
   if (body.statisticBatchSize !== undefined) options.statisticBatchSize = body.statisticBatchSize;

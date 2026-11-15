@@ -128,6 +128,14 @@ export default function InstellingenPage() {
         <div className="mt-1 text-xs text-slate-400">Configureer de daluren en weekendregeling voor Home Assistant-metingen.</div>
       </Link>
 
+      <Link
+        href="/instellingen/statistics-sync"
+        className="block bg-slate-900 border border-slate-800 p-4 rounded-lg hover:border-emerald-500/60 transition"
+      >
+        <div className="text-sm font-semibold text-slate-200">Statistics-sync uitvoeren</div>
+        <div className="mt-1 text-xs text-slate-400">Start een historische, incrementele of dagelijkse Home Assistant-sync.</div>
+      </Link>
+
       {foutmelding && (
         <div className="bg-rose-950/80 border border-rose-800 text-rose-300 text-xs p-4 rounded-xl">
           ⚠️ {foutmelding}
