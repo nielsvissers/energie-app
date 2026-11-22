@@ -37,6 +37,7 @@ De app gebruikt Prisma en MariaDB/MySQL. De connectiestring kan als `DATABASE_UR
 ## Cron sync
 
 De app gebruikt een `CRON_SECRET` voor beveiligde cron-calls naar de Home Assistant sync-endpoint.
+De sync kan ook handmatig gestart en geconfigureerd worden via **Instellingen → Statistics-sync uitvoeren**. Deze pagina voert de sync uit via een server action; de `CRON_SECRET` komt niet in de browser terecht. Omdat de app geen gebruikerslogin heeft, kan iedereen die de app kan bereiken deze sync starten. Beperk de app daarom tot een vertrouwd netwerk.
 
 ## Home Assistant long-term statistics
 

@@ -24,7 +24,7 @@ export interface StatisticsPeriodRequest {
   startTime: Date;
   endTime: Date;
   statisticIds: string[];
-  period?: 'hour';
+  period?: 'hour' | 'day' | '5minute';
 }
 
 /** Typed client for Home Assistant's recorder statistics WebSocket commands. */
@@ -63,14 +63,29 @@ export class HomeAssistantStatisticsClient {
     if (request.endTime <= request.startTime) throw new Error('endTime must be later than startTime.');
     if (request.statisticIds.length === 0) return {};
 
+    const period = request.period ?? 'hour';
+    const previousPeriodStart = new Date(request.startTime.getTime());
+
+    switch (period) {
+      case '5minute':
+        previousPeriodStart.setMinutes(previousPeriodStart.getMinutes() - 5);
+        break;
+      case 'hour':
+        previousPeriodStart.setHours(previousPeriodStart.getHours() - 1);
+        break;
+      case 'day':
+        previousPeriodStart.setDate(previousPeriodStart.getDate() - 1);
+        break;
+    }
+
     const command: StatisticsDuringPeriodCommand = {
       id: this.requestId++,
       type: 'recorder/statistics_during_period',
-      start_time: request.startTime.toISOString(),
+      start_time: previousPeriodStart.toISOString(),
       end_time: request.endTime.toISOString(),
-      period: request.period ?? 'hour',
+      period,
       statistic_ids: request.statisticIds,
-      types: ['state', 'sum'],
+      types: ['state'],
     };
 
     return this.requestWithRetry('recorder/statistics_during_period', () =>

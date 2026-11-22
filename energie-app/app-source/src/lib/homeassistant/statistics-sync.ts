@@ -347,14 +347,15 @@ export class HomeAssistantStatisticsSyncService {
         nextDate.setUTCDate(nextDate.getUTCDate() + 1);
         const start = lokaleTijdNaarUtc(date, '00:00');
         const end = lokaleTijdNaarUtc(nextDate.toISOString().slice(0, 10), '00:00');
-        const requestEnd = new Date(end.getTime() + 1);
+        const requestStart = new Date(start.getTime());
+        const requestEnd = new Date(end.getTime());
         const pointsByStatisticId = new Map<string, HomeAssistantStatisticPoint[]>();
         const errors: StatisticsDayDiagnosticResult['errors'] = [];
 
         for (const batch of chunkArray(selectedMetadata.map((item) => item.statistic_id), statisticBatchSize)) {
             try {
                 const result = await this.client.statisticsDuringPeriod({
-                    startTime: start,
+                    startTime: requestStart,
                     endTime: requestEnd,
                     statisticIds: batch,
                 });
@@ -380,8 +381,8 @@ export class HomeAssistantStatisticsSyncService {
 
         return {
             date,
-            startTime: start.toISOString(),
-            endTime: end.toISOString(),
+            startTime: requestStart.toISOString(),
+            endTime: requestEnd.toISOString(),
             statisticCount: statistics.length,
             pointCount: statistics.reduce((total, item) => total + item.points.length, 0),
             statistics,
@@ -568,7 +569,8 @@ export class HomeAssistantStatisticsSyncService {
             let dailyValues: DagMetingInput[] = [];
             if (successful && metadataById.get(statisticId)?.has_sum) {
                 try {
-                    dailyValues = await this.calculateDagMetingen(statisticId, values);
+                    dailyValues =  await this.calculateDagMetingen(statisticId, values);
+                    //dailyValues = await this.convertValues(statisticId, values);
                 } catch (error) {
                     successful = false;
                     this.logger.error('Failed to calculate daily metingen; continuing with other statistics.', {
@@ -616,24 +618,27 @@ export class HomeAssistantStatisticsSyncService {
             families.set(familyCode, [...(families.get(familyCode) ?? []), sourceType]);
         }
 
-        const touchedDates = [...new Set(
-            values
-                .filter((value) => !isLokaleMiddernacht(value.timestamp))
-                .map((value) => lokaleDatum(value.timestamp))
-        )];
+        const touchedDates = new Set(values.map((value) => lokaleDatum(value.timestamp)));
         const dailyValues: DagMetingInput[] = [];
         for (const dateKey of touchedDates) {
-            const localMidnight = new Date(`${dateKey}T00:00:00.000Z`);
-            const nextDate = new Date(localMidnight);
-            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
             const dayStart = lokaleTijdNaarUtc(dateKey, '00:00');
+            if (!values.some((value) => lokaleDatum(value.timestamp) === dateKey && value.timestamp.getTime() !== dayStart.getTime())) {
+                continue;
+            }
+            const date = new Date(`${dateKey}T00:00:00.000Z`);
+            const previousDate = new Date(date);
+            previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+            const nextDate = new Date(date);
+            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+            const firstTimestamp = lokaleTijdNaarUtc(previousDate.toISOString().slice(0, 10), '23:00');
             const dayEnd = lokaleTijdNaarUtc(nextDate.toISOString().slice(0, 10), '00:00');
             const [previous, dayPoints] = await Promise.all([
-                this.repository.getPreviousStatisticValue(statisticId, dayStart),
-                this.repository.getStatisticValuesInRange(statisticId, dayStart, dayEnd),
+                this.repository.getPreviousStatisticValue(statisticId, firstTimestamp),
+                this.repository.getStatisticValuesInRange(statisticId, firstTimestamp, new Date(dayEnd.getTime()-1)),
             ]);
-            const startBoundary = dayPoints.find((point) => point.timestamp.getTime() === dayStart.getTime());
-            let previousValue = startBoundary?.sum ?? startBoundary?.state ?? previous?.sum ?? previous?.state ?? null;
+            dayPoints.sort((first, second) => first.timestamp.getTime() - second.timestamp.getTime());
+            const firstPoint = dayPoints.find((point) => point.timestamp.getTime() === firstTimestamp.getTime());
+            let previousValue = firstPoint?.sum ?? firstPoint?.state ?? previous?.sum ?? previous?.state ?? null;
             const resetDaily = sourceTypes.some((type) => type.haDailyReset);
             const totals = new Map<number, number>();
             const targetIdsByFamily = new Map<string, { peak: number | null; offPeak: number | null }>();
@@ -657,7 +662,7 @@ export class HomeAssistantStatisticsSyncService {
             }
 
             for (const point of dayPoints) {
-                if (point.timestamp <= dayStart) continue;
+                if (point.timestamp <= firstTimestamp) continue;
                 const currentValue = point.sum ?? point.state;
                 if (currentValue === null) continue;
 
@@ -670,8 +675,6 @@ export class HomeAssistantStatisticsSyncService {
                 } else {
                     increment = Math.max(0, currentValue - previousValue);
                 }
-                if(statisticId === 'sensor.zp_productie_vandaag')
-                console.log(`Calculating daily metingen for ${statisticId} on ${dateKey}: previous=${previousValue}, current=${currentValue}, increment=${increment}`);
                 previousValue = currentValue;
                 if (increment === 0) continue;
 
@@ -687,7 +690,6 @@ export class HomeAssistantStatisticsSyncService {
                     if (targetId !== null) totals.set(targetId, (totals.get(targetId) ?? 0) + increment);
                 }
             }
-
             for (const [metingTypeId, waarde] of totals) {
                 dailyValues.push({
                     datum: new Date(`${dateKey}T12:00:00.000Z`),
@@ -695,9 +697,52 @@ export class HomeAssistantStatisticsSyncService {
                     waarde: Math.round(waarde * 1000) / 1000,
                 });
             }
+
         }
 
         return dailyValues;
+    }
+
+    /** Converts statistic values into timestamped data metingen for configured meting types. */
+    async convertValues(statisticId: string, values: StatisticValueInput[]): Promise<DagMetingInput[]> {
+        const sourceTypes = this.configuredMetingTypes.filter((type) => type.haEntityId === statisticId);
+        if (sourceTypes.length === 0 || values.length === 0) return [];
+
+        const families = new Map<string, ConfiguredMetingType[]>();
+        for (const sourceType of sourceTypes) {
+            const familyCode = baseCode(sourceType.code);
+            families.set(familyCode, [...(families.get(familyCode) ?? []), sourceType]);
+        }
+
+        const targetIdsByFamily = new Map<string, { peak: number | null; offPeak: number | null }>();
+        for (const [familyCode, family] of families) {
+            if (!family.some((type) => type.haSingleSourcePeak || type.haSingleSourceOffPeak)) continue;
+            const [peak, offPeak] = await Promise.all([
+                family.some((type) => type.haSingleSourcePeak) ? this.findMetingTypeId(`${familyCode}_PIEK`) : null,
+                family.some((type) => type.haSingleSourceOffPeak) ? this.findMetingTypeId(`${familyCode}_DAL`) : null,
+            ]);
+            targetIdsByFamily.set(familyCode, { peak, offPeak });
+        }
+
+        const dataMetingen: DagMetingInput[] = [];
+        for (const value of values) {
+            const waarde = value.sum ?? value.state;
+            if (waarde === null) continue;
+            for (const [familyCode, family] of families) {
+                if (!family.some((type) => type.haSingleSourcePeak || type.haSingleSourceOffPeak)) {
+                    for (const type of family) {
+                        dataMetingen.push({ datum: value.timestamp, metingTypeId: type.id, waarde });
+                    }
+                    continue;
+                }
+
+                const intervalEnd = new Date(value.timestamp.getTime() - 1);
+                const bucket = isDalUur(intervalEnd, this.dalurenInstellingen) ? 'offPeak' : 'peak';
+                const metingTypeId = targetIdsByFamily.get(familyCode)?.[bucket] ?? null;
+                if (metingTypeId !== null) dataMetingen.push({ datum: value.timestamp, metingTypeId, waarde });
+            }
+        }
+        return dataMetingen;
     }
 
     private async findMetingTypeId(code: string): Promise<number | null> {
@@ -736,14 +781,45 @@ export class HomeAssistantStatisticsSyncService {
 
 /** Runs an initial import using HOME_ASSISTANT_URL and HOME_ASSISTANT_TOKEN. */
 export async function syncHistoricalStatistics(options: StatisticsSyncOptions = {}): Promise<StatisticsSyncSummary> {
-    const client = createClient();
-    try {
-        const service = await createDefaultService(client);
-        return await service.syncHistorical(options);
-    } finally {
-        client.close();
+    const startedAt = Date.now();
+    const startTime = options.startTime ?? options.minimumSearchDate ?? minimumSearchDateFromEnvironment();
+    const endTime = options.endTime ?? new Date();
+    if (startTime >= endTime) throw new RangeError('Historical start time must be earlier than end time.');
+
+    const cursor = new Date(Date.UTC(startTime.getUTCFullYear(), startTime.getUTCMonth(), startTime.getUTCDate()));
+    const lastDate = new Date(Date.UTC(endTime.getUTCFullYear(), endTime.getUTCMonth(), endTime.getUTCDate()));
+    let statisticCount = 0;
+    let chunkCount = 0;
+    let valuesUpserted = 0;
+    let dagMetingenUpserted = 0;
+    let failedStatistics = 0;
+    let oldestAvailable: string | null = null;
+
+    while (cursor <= lastDate) {
+        const summary = await syncStatisticsForDay(cursor.toISOString().slice(0, 10), options);
+        statisticCount = Math.max(statisticCount, summary.statisticCount);
+        chunkCount += summary.chunkCount;
+        valuesUpserted += summary.valuesUpserted;
+        dagMetingenUpserted += summary.dagMetingenUpserted;
+        failedStatistics += summary.failedStatistics;
+        if (summary.oldestAvailable && (!oldestAvailable || summary.oldestAvailable < oldestAvailable)) {
+            oldestAvailable = summary.oldestAvailable;
+        }
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
-}
+
+    return {
+        mode: 'historical',
+        statisticCount,
+        chunkCount,
+        valuesUpserted,
+        dagMetingenUpserted,
+        failedStatistics,
+        oldestAvailable,
+        durationMs: Date.now() - startedAt,
+    };
+    }
+
 
 /** Runs an incremental import, backfilling newly discovered statistic IDs first. */
 export async function syncIncrementalStatistics(options: StatisticsSyncOptions = {}): Promise<StatisticsSyncSummary> {

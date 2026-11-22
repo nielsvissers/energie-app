@@ -82,9 +82,9 @@ export interface StatisticsDuringPeriodCommand extends HomeAssistantCommandEnvel
   type: 'recorder/statistics_during_period';
   start_time: string;
   end_time: string;
-  period: 'hour';
+  period: 'hour' | 'day' | '5minute';
   statistic_ids: string[];
-  types: Array<'state' | 'sum'>;
+  types: Array<'state'>;
 }
 
 export type HomeAssistantStatisticsCommand =
@@ -96,7 +96,7 @@ export type HomeAssistantServerMessage =
   | HomeAssistantAuthOkMessage
   | HomeAssistantAuthInvalidMessage
   | HomeAssistantCommandResponse<unknown>
-  | { id?: number; type: string; [key: string]: unknown };
+  | { id?: number; type: string;[key: string]: unknown };
 
 export interface StatisticsSyncLogger {
   info(message: string, context?: Record<string, unknown>): void;
